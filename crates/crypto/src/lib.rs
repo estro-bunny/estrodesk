@@ -30,7 +30,7 @@ pub enum CryptoError {
     DecryptionFailed,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DeviceIdentity {
     signing_key: SigningKey,
 }
@@ -116,7 +116,6 @@ pub fn derive_directional_keys(
     let mut keys = [0u8; 64];
     hk.expand(DIRECTIONAL_KEY_INFO, &mut keys)
         .map_err(|_| CryptoError::KeyDerivationFailed)?;
-
     let mut controller_to_host = [0u8; 32];
     let mut host_to_controller = [0u8; 32];
     controller_to_host.copy_from_slice(&keys[..32]);
@@ -133,11 +132,7 @@ impl SessionCipher {
         Self { cipher: ChaCha20Poly1305::new(key.into()) }
     }
 
-    pub fn encrypt(
-        &self,
-        nonce: &[u8; NONCE_SIZE],
-        plaintext: &[u8],
-    ) -> Result<Vec<u8>, CryptoError> {
+    pub fn encrypt(&self, nonce: &[u8; NONCE_SIZE], plaintext: &[u8]) -> Result<Vec<u8>, CryptoError> {
         self.encrypt_with_aad(nonce, plaintext, &[])
     }
 
@@ -152,11 +147,7 @@ impl SessionCipher {
             .map_err(|_| CryptoError::EncryptionFailed)
     }
 
-    pub fn decrypt(
-        &self,
-        nonce: &[u8; NONCE_SIZE],
-        ciphertext: &[u8],
-    ) -> Result<Vec<u8>, CryptoError> {
+    pub fn decrypt(&self, nonce: &[u8; NONCE_SIZE], ciphertext: &[u8]) -> Result<Vec<u8>, CryptoError> {
         self.decrypt_with_aad(nonce, ciphertext, &[])
     }
 
@@ -180,10 +171,7 @@ mod tests {
         let controller = EphemeralKeyExchange::generate();
         let host = EphemeralKeyExchange::generate();
         let shared = controller.derive_shared_secret(&host.public_key_bytes());
-        let transcript = transcript_hash(
-            &[1; 32], &[2; 32],
-            &controller.public_key_bytes(), &host.public_key_bytes(),
-        );
+        let transcript = transcript_hash(&[1; 32], &[2; 32], &controller.public_key_bytes(), &host.public_key_bytes());
         let (c2h, h2c) = derive_directional_keys(&shared, &transcript).unwrap();
         (c2h, h2c, transcript)
     }
@@ -207,10 +195,7 @@ mod tests {
     fn both_peers_derive_the_same_shared_secret() {
         let controller = EphemeralKeyExchange::generate();
         let host = EphemeralKeyExchange::generate();
-        assert_eq!(
-            controller.derive_shared_secret(&host.public_key_bytes()),
-            host.derive_shared_secret(&controller.public_key_bytes())
-        );
+        assert_eq!(controller.derive_shared_secret(&host.public_key_bytes()), host.derive_shared_secret(&controller.public_key_bytes()));
     }
 
     #[test]
