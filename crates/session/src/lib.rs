@@ -6,6 +6,9 @@ use estrodesk_protocol::{
 };
 use thiserror::Error;
 
+pub mod trust;
+pub use trust::{TrustError, TrustStatus, TrustStore, TrustedDevice};
+
 #[derive(Debug, Error)]
 pub enum HandshakeError {
     #[error("unexpected handshake message")]
