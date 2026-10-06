@@ -1,0 +1,11 @@
+[package]
+name = "estrodesk-desktop"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+description = "EstroDesk desktop host and controller"
+
+[dependencies]
+estrodesk-protocol = { path = "../../crates/protocol" }
+estrodesk-transport = { path = "../../crates/transport" }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
