@@ -1,8 +1,16 @@
+use chacha20poly1305::{
+    aead::{Aead, KeyInit},
+    ChaCha20Poly1305, Nonce,
+};
 use ed25519_dalek::{Signer, SigningKey, Verifier, VerifyingKey, Signature};
+use hkdf::Hkdf;
 use rand_core::OsRng;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 use x25519_dalek::{PublicKey, StaticSecret};
+
+const KEY_INFO: &[u8] = b"ESTRODESK-SESSION-KEY-V1";
+const NONCE_SIZE: usize = 12;
 
 #[derive(Debug, Error)]
 pub enum CryptoError {
@@ -10,6 +18,12 @@ pub enum CryptoError {
     InvalidPublicKey,
     #[error("invalid signature")]
     InvalidSignature,
+    #[error("key derivation failed")]
+    KeyDerivationFailed,
+    #[error("encryption failed")]
+    EncryptionFailed,
+    #[error("decryption failed")]
+    DecryptionFailed,
 }
 
 #[derive(Debug)]
@@ -84,6 +98,49 @@ pub fn transcript_hash(
     hasher.finalize().into()
 }
 
+pub fn derive_session_key(
+    shared_secret: &[u8; 32],
+    transcript: &[u8; 32],
+) -> Result<[u8; 32], CryptoError> {
+    let hk = Hkdf::<Sha256>::new(Some(transcript), shared_secret);
+    let mut key = [0u8; 32];
+    hk.expand(KEY_INFO, &mut key)
+        .map_err(|_| CryptoError::KeyDerivationFailed)?;
+    Ok(key)
+}
+
+pub struct SessionCipher {
+    cipher: ChaCha20Poly1305,
+}
+
+impl SessionCipher {
+    pub fn new(key: &[u8; 32]) -> Self {
+        Self {
+            cipher: ChaCha20Poly1305::new(key.into()),
+        }
+    }
+
+    pub fn encrypt(
+        &self,
+        nonce: &[u8; NONCE_SIZE],
+        plaintext: &[u8],
+    ) -> Result<Vec<u8>, CryptoError> {
+        self.cipher
+            .encrypt(Nonce::from_slice(nonce), plaintext)
+            .map_err(|_| CryptoError::EncryptionFailed)
+    }
+
+    pub fn decrypt(
+        &self,
+        nonce: &[u8; NONCE_SIZE],
+        ciphertext: &[u8],
+    ) -> Result<Vec<u8>, CryptoError> {
+        self.cipher
+            .decrypt(Nonce::from_slice(nonce), ciphertext)
+            .map_err(|_| CryptoError::DecryptionFailed)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -129,10 +186,42 @@ mod tests {
     }
 
     #[test]
-    fn transcript_hash_changes_when_handshake_material_changes() {
-        let a = transcript_hash(&[1; 32], &[2; 32], &[3; 32], &[4; 32]);
-        let b = transcript_hash(&[1; 32], &[2; 32], &[3; 32], &[5; 32]);
+    fn session_keys_match_for_both_peers() {
+        let controller = EphemeralKeyExchange::generate();
+        let host = EphemeralKeyExchange::generate();
+        let shared_a =
+            controller.derive_shared_secret(&host.public_key_bytes());
+        let shared_b =
+            host.derive_shared_secret(&controller.public_key_bytes());
 
-        assert_ne!(a, b);
+        let transcript = transcript_hash(
+            &[1; 32],
+            &[2; 32],
+            &controller.public_key_bytes(),
+            &host.public_key_bytes(),
+        );
+
+        assert_eq!(
+            derive_session_key(&shared_a, &transcript).unwrap(),
+            derive_session_key(&shared_b, &transcript).unwrap()
+        );
+    }
+
+    #[test]
+    fn encrypted_message_round_trips_and_tampering_fails() {
+        let key = [7u8; 32];
+        let cipher = SessionCipher::new(&key);
+        let nonce = [9u8; NONCE_SIZE];
+        let plaintext = b"hello from estrodesk";
+
+        let ciphertext = cipher.encrypt(&nonce, plaintext).unwrap();
+        assert_eq!(
+            cipher.decrypt(&nonce, &ciphertext).unwrap(),
+            plaintext
+        );
+
+        let mut tampered = ciphertext.clone();
+        tampered[0] ^= 1;
+        assert!(cipher.decrypt(&nonce, &tampered).is_err());
     }
 }
