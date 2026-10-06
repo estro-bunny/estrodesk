@@ -13,6 +13,9 @@ const KEY_INFO: &[u8] = b"ESTRODESK-SESSION-KEY-V1";
 const DIRECTIONAL_KEY_INFO: &[u8] = b"ESTRODESK-DIRECTIONAL-KEYS-V1";
 const NONCE_SIZE: usize = 12;
 
+mod identity_store;
+pub use identity_store::IdentityStorageError;
+
 #[derive(Debug, Error)]
 pub enum CryptoError {
     #[error("invalid public key")]
