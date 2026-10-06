@@ -6,6 +6,7 @@ license = "MIT"
 description = "Transport primitives for EstroDesk"
 
 [dependencies]
+estrodesk-crypto = { path = "../crypto" }
 estrodesk-protocol = { path = "../protocol" }
 serde_json = "1"
 thiserror = "2"
