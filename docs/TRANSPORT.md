@@ -1,6 +1,10 @@
 # EstroDesk Transport
 
-The initial transport uses a small length-delimited framing layer over an async byte stream.
+EstroDesk uses length-delimited frames over a reliable byte stream such as TCP.
+
+## Bootstrap framing
+
+Before authentication, the desktop bootstrap exchanges protocol `Envelope` values using:
 
 ```text
 +----------------+----------------------+
@@ -9,12 +13,41 @@ The initial transport uses a small length-delimited framing layer over an async 
 +----------------+----------------------+
 ```
 
-## Safety properties
+Frames larger than 1 MiB are rejected and protocol versions are validated before dispatch.
 
-- Maximum frame size: 1 MiB.
-- Length is validated before allocation.
-- Protocol version validation occurs after decoding.
-- Unexpected EOF is treated as connection closure.
-- The framing layer does not provide encryption.
+## Secure channel
 
-The current implementation is transport-agnostic and can sit on TCP or another reliable byte stream. TLS/noise-style authenticated encrypted transport will be added before remote-control traffic is considered production-ready.
+After the authenticated handshake completes, plaintext framing is replaced by `SecureChannel`:
+
+```text
++----------------+----------------+----------------------------+
+| 4-byte length  | 8-byte sequence| ChaCha20-Poly1305 payload |
+| big-endian     |                | + authentication tag      |
++----------------+----------------+----------------------------+
+```
+
+The secure channel derives independent controller→host and host→controller keys from the X25519 shared secret and signed handshake transcript. Sequence numbers are authenticated as associated data and must increase exactly by one. Replay, reordering, and authentication failures are rejected.
+
+The nonce is derived from a fixed direction marker plus the monotonically increasing sequence number. It is not supplied by the remote peer independently of the authenticated frame sequence.
+
+## Desktop integration
+
+The desktop binary now performs:
+
+```text
+TCP connect/accept
+      ↓
+Hello / HelloAck
+      ↓
+user-visible trust prompt
+      ↓
+Authenticate / AuthenticationAck
+      ↓
+X25519 + HKDF directional keys
+      ↓
+SecureChannel
+      ↓
+encrypted SessionStart / SessionStarted
+```
+
+This is an authenticated encrypted-session prototype, not a production remote-desktop implementation. Device identities are currently generated in memory for the process lifetime. Persistent OS-backed identity storage, revocation, timeouts, network hardening, and security review remain required before treating the pairing system as production-ready.
