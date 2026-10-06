@@ -48,6 +48,7 @@ impl ControllerHandshake {
         device_name: impl Into<String>,
         capabilities: Capabilities,
     ) -> Message {
+        self.state = HandshakeState::HelloSent;
         Message::Hello(Hello {
             device_id: device_id.into(),
             device_name: device_name.into(),
@@ -59,6 +60,7 @@ impl ControllerHandshake {
         &mut self,
         ack: HelloAck,
     ) -> Result<Message, HandshakeError> {
+        if self.state != HandshakeState::HelloSent { return Err(HandshakeError::UnexpectedMessage); }
         let host_identity = decode_32(&ack.public_key)?;
         let host_ephemeral = decode_32(&ack.ephemeral_public_key)?;
 
@@ -147,6 +149,7 @@ impl HostHandshake {
         &mut self,
         auth: Authentication,
     ) -> Result<(Message, SessionKeys), HandshakeError> {
+        if self.state != HandshakeState::Initial { return Err(HandshakeError::UnexpectedMessage); }
         let controller_identity = decode_32(&auth.public_key)?;
         let controller_ephemeral = decode_32(&auth.ephemeral_public_key)?;
         let proof = decode_64(&auth.proof)?;
