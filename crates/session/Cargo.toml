@@ -1,0 +1,12 @@
+[package]
+name = "estrodesk-session"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "EstroDesk session handshake"
+
+[dependencies]
+estrodesk-crypto = { path = "../crypto" }
+estrodesk-protocol = { path = "../protocol" }
+thiserror = "2"
+hex = "0.4"
