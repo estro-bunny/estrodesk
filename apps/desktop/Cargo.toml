@@ -10,4 +10,5 @@ estrodesk-crypto = { path = "../../crates/crypto" }
 estrodesk-protocol = { path = "../../crates/protocol" }
 estrodesk-session = { path = "../../crates/session" }
 estrodesk-transport = { path = "../../crates/transport" }
+hex = "0.4"
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
