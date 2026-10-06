@@ -11,10 +11,7 @@ pub struct Envelope {
 
 impl Envelope {
     pub fn new(message: Message) -> Self {
-        Self {
-            version: PROTOCOL_VERSION,
-            message,
-        }
+        Self { version: PROTOCOL_VERSION, message }
     }
 
     pub fn validate(&self) -> Result<(), ProtocolError> {
@@ -51,6 +48,8 @@ pub struct Hello {
 pub struct HelloAck {
     pub device_id: String,
     pub capabilities: Capabilities,
+    pub public_key: String,
+    pub ephemeral_public_key: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -65,6 +64,7 @@ pub struct Capabilities {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Authentication {
     pub public_key: String,
+    pub ephemeral_public_key: String,
     pub proof: String,
 }
 
@@ -72,6 +72,8 @@ pub struct Authentication {
 pub struct AuthenticationAck {
     pub accepted: bool,
     pub reason: Option<String>,
+    pub public_key: Option<String>,
+    pub proof: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -109,7 +111,6 @@ mod tests {
         let envelope = Envelope::new(Message::Ping { nonce: 42 });
         let encoded = serde_json::to_string(&envelope).unwrap();
         let decoded: Envelope = serde_json::from_str(&encoded).unwrap();
-
         assert_eq!(decoded, envelope);
         assert!(decoded.validate().is_ok());
     }
@@ -120,7 +121,6 @@ mod tests {
             version: PROTOCOL_VERSION + 1,
             message: Message::Ping { nonce: 1 },
         };
-
         assert_eq!(
             envelope.validate(),
             Err(ProtocolError::UnsupportedVersion(PROTOCOL_VERSION + 1))
