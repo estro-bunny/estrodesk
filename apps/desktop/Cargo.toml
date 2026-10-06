@@ -6,6 +6,8 @@ license = "AGPL-3.0-or-later"
 description = "EstroDesk desktop host and controller"
 
 [dependencies]
+estrodesk-crypto = { path = "../../crates/crypto" }
 estrodesk-protocol = { path = "../../crates/protocol" }
+estrodesk-session = { path = "../../crates/session" }
 estrodesk-transport = { path = "../../crates/transport" }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
