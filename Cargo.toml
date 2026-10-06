@@ -1,0 +1,17 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/protocol",
+    "crates/crypto",
+    "crates/transport",
+    "crates/screen",
+    "crates/input",
+    "crates/files",
+    "apps/desktop",
+    "apps/relay",
+]
+
+[workspace.package]
+edition = "2024"
+license = "AGPL-3.0-or-later"
+version = "0.1.0"
