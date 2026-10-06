@@ -1,0 +1,12 @@
+[package]
+name = "estrodesk-transport"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Transport primitives for EstroDesk"
+
+[dependencies]
+estrodesk-protocol = { path = "../protocol" }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["io-util", "net", "rt", "macros"] }
