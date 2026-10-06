@@ -64,13 +64,9 @@ impl ControllerHandshake {
     ) -> Message {
         if self.state != HandshakeState::Initial {
             self.state = HandshakeState::Failed;
-            return Message::Hello(Hello {
-                device_id: device_id.into(),
-                device_name: device_name.into(),
-                capabilities,
-            });
+        } else {
+            self.state = HandshakeState::HelloSent;
         }
-        self.state = HandshakeState::HelloSent;
         Message::Hello(Hello {
             device_id: device_id.into(),
             device_name: device_name.into(),
@@ -250,18 +246,12 @@ mod tests {
         let controller_identity = DeviceIdentity::generate();
         let host_identity = DeviceIdentity::generate();
         let mut controller = ControllerHandshake::new(controller_identity);
-        let host = HostHandshake::new(host_identity);
+        let mut host = HostHandshake::new(host_identity.clone());
         let Message::Hello(hello) = controller.hello("controller", "Bunni PC", capabilities()) else { panic!() };
-        let Message::HelloAck(ack) = {
-            let mut host = host;
-            host.receive_hello(hello, "host", capabilities()).unwrap()
-        } else { panic!() };
+        let Message::HelloAck(ack) = host.receive_hello(hello, "host", capabilities()).unwrap() else { panic!() };
         let Message::Authenticate(mut auth) = controller.receive_hello_ack(ack).unwrap() else { panic!() };
         auth.proof.replace_range(0..2, "00");
-        let result = {
-            let mut host = HostHandshake::new(host_identity);
-            host.receive_authentication(auth)
-        };
+        let result = host.receive_authentication(auth);
         assert!(matches!(result, Err(HandshakeError::Crypto(_))));
     }
 
@@ -270,7 +260,7 @@ mod tests {
         let controller_identity = DeviceIdentity::generate();
         let host_identity = DeviceIdentity::generate();
         let mut controller = ControllerHandshake::new(controller_identity);
-        let mut host = HostHandshake::new(host_identity);
+        let mut host = HostHandshake::new(host_identity.clone());
         let Message::Hello(hello) = controller.hello("controller", "Bunni PC", capabilities()) else { panic!() };
         let Message::HelloAck(ack) = host.receive_hello(hello, "host", capabilities()).unwrap() else { panic!() };
         let Message::Authenticate(auth) = controller.receive_hello_ack(ack).unwrap() else { panic!() };
