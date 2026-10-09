@@ -94,9 +94,9 @@ mod tests {
         let mut stored = identity.to_storage_bytes();
         stored[0] ^= 0xff;
 
-        assert_eq!(
+        assert!(matches!(
             DeviceIdentity::from_storage_bytes(&stored),
             Err(IdentityStorageError::InvalidData)
-        );
+        ));
     }
 }
