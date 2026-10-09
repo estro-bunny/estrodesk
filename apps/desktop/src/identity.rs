@@ -4,6 +4,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 const IDENTITY_FILE: &str = "identity.bin";
+const IDENTITY_STORAGE_BYTES: usize = 47;
 
 #[derive(Debug)]
 pub enum IdentityError {
@@ -33,7 +34,7 @@ pub fn load_or_create(data_dir: &Path) -> Result<DeviceIdentity, IdentityError> 
 
     match fs::read(&path) {
         Ok(bytes) => {
-            let bytes: [u8; 46] = bytes
+            let bytes: [u8; IDENTITY_STORAGE_BYTES] = bytes
                 .try_into()
                 .map_err(|_| IdentityStorageError::InvalidData)?;
             Ok(DeviceIdentity::from_storage_bytes(&bytes)?)
@@ -71,9 +72,13 @@ fn write_private_file(path: &Path, bytes: &[u8]) -> Result<(), io::Error> {
 mod tests {
     use super::*;
 
+    fn test_dir(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("estrodesk-{label}-{}", std::process::id()))
+    }
+
     #[test]
     fn identity_is_created_and_then_reused() {
-        let dir = std::env::temp_dir().join(format!("estrodesk-identity-{}", std::process::id()));
+        let dir = test_dir("identity");
         let _ = fs::remove_dir_all(&dir);
 
         let first = load_or_create(&dir).unwrap();
@@ -83,14 +88,28 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    #[test]
+    fn malformed_identity_fails_closed_without_replacing_file() {
+        let dir = test_dir("malformed");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = identity_path(&dir);
+        fs::write(&path, b"not a valid identity").unwrap();
+
+        assert!(load_or_create(&dir).is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"not a valid identity");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     #[cfg(unix)]
     #[test]
     fn identity_file_is_owner_only() {
         use std::os::unix::fs::PermissionsExt;
 
-        let dir = std::env::temp_dir().join(format!("estrodesk-perms-{}", std::process::id()));
+        let dir = test_dir("perms");
         let _ = fs::remove_dir_all(&dir);
-        let _ = load_or_create(&dir).unwrap();
+        load_or_create(&dir).unwrap();
         let mode = fs::metadata(identity_path(&dir)).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600);
         let _ = fs::remove_dir_all(&dir);
