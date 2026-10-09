@@ -1,9 +1,12 @@
+mod identity;
+
 use estrodesk_crypto::DeviceIdentity;
 use estrodesk_protocol::{Capabilities, Envelope, Message};
-use estrodesk_session::{ControllerHandshake, HandshakeError, HostHandshake};
+use estrodesk_session::{ControllerHandshake, HostHandshake};
 use estrodesk_transport::{receive, send, SecureChannel};
 use std::env;
 use std::io::{self, Write};
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -52,6 +55,28 @@ fn session_id() -> String {
     format!("session-{nanos:x}")
 }
 
+fn data_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    if let Ok(value) = env::var("ESTRODESK_DATA_DIR") {
+        return Ok(PathBuf::from(value));
+    }
+    #[cfg(windows)]
+    if let Ok(value) = env::var("APPDATA") {
+        return Ok(PathBuf::from(value).join("EstroDesk"));
+    }
+    #[cfg(not(windows))]
+    if let Ok(value) = env::var("XDG_DATA_HOME") {
+        return Ok(PathBuf::from(value).join("estrodesk"));
+    }
+    Err("set ESTRODESK_DATA_DIR or the platform data-directory variable".into())
+}
+
+fn load_identity() -> Result<DeviceIdentity, Box<dyn std::error::Error>> {
+    let dir = data_dir()?;
+    let identity = identity::load_or_create(&dir)?;
+    println!("Identity file: {}", identity::identity_path(&dir).display());
+    Ok(identity)
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = env::args().skip(1);
@@ -66,6 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("EstroDesk");
             eprintln!("  estrodesk host [port]");
             eprintln!("  estrodesk connect [address:port]");
+            eprintln!("Set ESTRODESK_DATA_DIR to override the identity storage directory.");
         }
     }
 
@@ -73,11 +99,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn host(port: String) -> Result<(), Box<dyn std::error::Error>> {
-    let identity = DeviceIdentity::generate();
+    let identity = load_identity()?;
     let listener = TcpListener::bind(format!("0.0.0.0:{port}")).await?;
     println!("EstroDesk host listening on {port}");
     println!("Host identity fingerprint: {}", fingerprint(&identity.public_key_bytes()));
-    println!("Identity is currently session-only; persistent OS-backed storage is next.");
+    println!("Warning: the identity seed is stored as a local file, not encrypted by an OS keychain.");
 
     loop {
         let (mut stream, peer) = listener.accept().await?;
@@ -111,22 +137,19 @@ async fn host_connection(
         return Err("expected Authenticate after HelloAck".into());
     };
 
-    let controller_key = hex::decode(&auth.public_key)?;
-    let controller_key: [u8; 32] = controller_key
+    let controller_key: [u8; 32] = hex::decode(&auth.public_key)?
         .try_into()
         .map_err(|_| "controller public key must be 32 bytes")?;
 
-    if !approve(&hello.device_name, &controller_key) {
+    if !approve("controller device", &controller_key) {
         send(
             stream,
-            &Envelope::new(Message::AuthenticateAck(
-                estrodesk_protocol::AuthenticationAck {
-                    accepted: false,
-                    reason: Some("user rejected device pairing".into()),
-                    public_key: None,
-                    proof: None,
-                },
-            )),
+            &Envelope::new(Message::AuthenticateAck(estrodesk_protocol::AuthenticationAck {
+                accepted: false,
+                reason: Some("user rejected device pairing".into()),
+                public_key: None,
+                proof: None,
+            })),
         )
         .await?;
         return Err("pairing rejected by user".into());
@@ -151,15 +174,14 @@ async fn host_connection(
         )
         .await?;
     println!("Secure channel ready.");
-
     Ok(())
 }
 
 async fn connect(address: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let identity = DeviceIdentity::generate();
+    let identity = load_identity()?;
     println!("Connecting to {address}");
     println!("Controller identity fingerprint: {}", fingerprint(&identity.public_key_bytes()));
-    println!("Identity is currently session-only; persistent OS-backed storage is next.");
+    println!("Warning: the identity seed is stored as a local file, not encrypted by an OS keychain.");
 
     let mut stream = TcpStream::connect(address).await?;
     let mut handshake = ControllerHandshake::new(identity);
@@ -177,7 +199,7 @@ async fn connect(address: &str) -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|_| "host public key must be 32 bytes")?;
 
     if !approve(&ack.device_id, &host_key) {
-        return Err("host rejected locally: user did not trust the device".into());
+        return Err("user did not trust the host device".into());
     }
 
     let auth = handshake.receive_hello_ack(ack)?;
@@ -203,11 +225,10 @@ async fn connect(address: &str) -> Result<(), Box<dyn std::error::Error>> {
     let response = channel.receive(&mut stream).await?;
     match response.message {
         Message::SessionStarted(start) if start.session_id == id => {
-            println!("Encrypted session established: {}", id);
+            println!("Encrypted session established: {id}");
             println!("Secure channel ready.");
         }
         _ => return Err("unexpected encrypted session response".into()),
     }
-
     Ok(())
 }
