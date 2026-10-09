@@ -73,11 +73,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn host(port: String) -> Result<(), Box<dyn std::error::Error>> {
-    let identity = DeviceIdentity::generate();
+    let identity = DeviceIdentity::load_or_generate("device-identity")?;
     let listener = TcpListener::bind(format!("0.0.0.0:{port}")).await?;
     println!("EstroDesk host listening on {port}");
     println!("Host identity fingerprint: {}", fingerprint(&identity.public_key_bytes()));
-    println!("Identity is currently session-only; persistent OS-backed storage is next.");
 
     loop {
         let (mut stream, peer) = listener.accept().await?;
@@ -156,10 +155,9 @@ async fn host_connection(
 }
 
 async fn connect(address: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let identity = DeviceIdentity::generate();
+    let identity = DeviceIdentity::load_or_generate("device-identity")?;
     println!("Connecting to {address}");
     println!("Controller identity fingerprint: {}", fingerprint(&identity.public_key_bytes()));
-    println!("Identity is currently session-only; persistent OS-backed storage is next.");
 
     let mut stream = TcpStream::connect(address).await?;
     let mut handshake = ControllerHandshake::new(identity);
