@@ -4,6 +4,10 @@
 //! encoder layers can then consume the same representation on Windows and
 //! Linux without knowing anything about the capture API.
 
+mod capture;
+
+pub use capture::{CaptureError, ScreenCapture, TestCapture};
+
 use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
