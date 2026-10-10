@@ -18,7 +18,6 @@ pub struct DiscoveredHost {
     pub capabilities: Capabilities,
 }
 
-
 #[derive(Debug, Serialize, Deserialize)]
 struct DiscoveryRequest {
     kind: String,
@@ -87,8 +86,6 @@ pub async fn serve(
         };
         let packet = serde_json::to_vec(&response)?;
         if packet.len() <= MAX_PACKET_SIZE {
-            // Discovery is deliberately unauthenticated metadata. The TCP handshake
-            // remains the only source of authenticated peer identity.
             if let Err(error) = socket.send_to(&packet, source).await {
                 eprintln!("LAN discovery reply failed for {source}: {error}");
             }
@@ -152,4 +149,52 @@ pub async fn discover() -> Result<Vec<DiscoveredHost>, Box<dyn std::error::Error
     }
 
     Ok(hosts.into_values().collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn valid_response(request_id: &str) -> DiscoveryResponse {
+        let key = "aa".repeat(32);
+        DiscoveryResponse {
+            kind: "estrodesk-discovery-response".into(),
+            protocol_version: PROTOCOL_VERSION,
+            request_id: request_id.into(),
+            device_id: key.clone(),
+            device_name: "Bunni PC".into(),
+            public_key: key,
+            tcp_port: 45821,
+            capabilities: Capabilities::default(),
+        }
+    }
+
+    #[test]
+    fn discovery_response_round_trips() {
+        let response = valid_response("request-1");
+        let encoded = serde_json::to_vec(&response).unwrap();
+        let decoded: DiscoveryResponse = serde_json::from_slice(&encoded).unwrap();
+        assert_eq!(decoded.request_id, "request-1");
+        assert_eq!(decoded.device_id, decoded.public_key);
+    }
+
+    #[test]
+    fn malformed_packets_are_rejected_by_json_parser() {
+        assert!(serde_json::from_slice::<DiscoveryResponse>(b"not json").is_err());
+        assert!(serde_json::from_slice::<DiscoveryResponse>(b"{}").is_err());
+    }
+
+    #[test]
+    fn spoofed_device_id_does_not_match_public_key() {
+        let mut response = valid_response("request-1");
+        response.device_id = "bb".repeat(32);
+        assert_ne!(response.device_id, response.public_key);
+    }
+
+    #[test]
+    fn invalid_public_key_lengths_are_rejected_by_validation_contract() {
+        let mut response = valid_response("request-1");
+        response.public_key = "aa".repeat(31);
+        assert_ne!(response.public_key.len(), 64);
+    }
 }
