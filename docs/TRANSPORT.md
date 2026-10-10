@@ -50,4 +50,4 @@ SecureChannel
 encrypted SessionStart / SessionStarted
 ```
 
-This is an authenticated encrypted-session prototype, not a production remote-desktop implementation. Device identities are currently generated in memory for the process lifetime. Persistent OS-backed identity storage, revocation, timeouts, network hardening, and security review remain required before treating the pairing system as production-ready.
+This is an authenticated encrypted-session prototype, not a production remote-desktop implementation. Device identities and trust decisions persist locally, but the identity signing seed is currently stored as a plaintext file protected only by filesystem permissions; it is not encrypted by the OS keychain. LAN discovery uses unauthenticated UDP metadata and must never be treated as proof of identity. OS-protected identity storage, atomic trust-store writes, timeouts, network hardening, platform testing, and independent security review remain required before treating the pairing system as production-ready.
