@@ -1,3 +1,4 @@
+mod discovery;
 mod identity;
 
 use estrodesk_crypto::DeviceIdentity;
@@ -69,11 +70,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = env::args().skip(1);
     match args.next().as_deref() {
         Some("host") => host(args.next().unwrap_or_else(|| DEFAULT_PORT.to_string())).await?,
-        Some("connect") => connect(&args.next().unwrap_or_else(|| format!("127.0.0.1:{DEFAULT_PORT}"))).await?,
+        Some("connect") => connect(args.next()).await?,
+        Some("discover") => { print_discovered_hosts().await?; }
         _ => {
             eprintln!("EstroDesk");
             eprintln!("  estrodesk host [port]");
-            eprintln!("  estrodesk connect [address:port]");
+            eprintln!("  estrodesk discover");
+            eprintln!("  estrodesk connect [address:port]  (omit address to choose a discovered LAN host)");
             eprintln!("Set ESTRODESK_DATA_DIR to override the identity storage directory.");
         }
     }
@@ -81,12 +84,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn host(port: String) -> Result<(), Box<dyn std::error::Error>> {
+    let tcp_port: u16 = port.parse()?;
+    if tcp_port == 0 { return Err("host port must be between 1 and 65535".into()); }
+
     let identity = load_identity()?;
     let trust = Arc::new(Mutex::new(load_trust()?));
-    let listener = TcpListener::bind(format!("0.0.0.0:{port}")).await?;
-    println!("EstroDesk host listening on {port}");
+    let listener = TcpListener::bind(format!("0.0.0.0:{tcp_port}")).await?;
+    println!("EstroDesk host listening on TCP {tcp_port}");
     println!("Host identity fingerprint: {}", fingerprint(&identity.public_key_bytes()));
     println!("Warning: identity seed is a local file, not OS-keychain encrypted.");
+
+    let discovery_key = identity.public_key_bytes();
+    tokio::spawn(async move {
+        if let Err(error) = discovery::serve(
+            discovery_key,
+            "EstroDesk host".to_string(),
+            tcp_port,
+            capabilities(),
+        ).await {
+            eprintln!("LAN discovery unavailable: {error}");
+        }
+    });
 
     loop {
         let (mut stream, peer) = listener.accept().await?;
@@ -151,14 +169,51 @@ async fn send_rejection(stream: &mut TcpStream, reason: &str) -> Result<(), Box<
     Ok(())
 }
 
-async fn connect(address: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn print_discovered_hosts() -> Result<Vec<discovery::DiscoveredHost>, Box<dyn std::error::Error>> {
+    println!("Searching the local network for 3 seconds...");
+    let hosts = discovery::discover().await?;
+    if hosts.is_empty() {
+        println!("No EstroDesk hosts found. Check that both devices share a LAN and that UDP {}/TCP host traffic is allowed.", discovery::DISCOVERY_PORT);
+    } else {
+        println!("Found {} host(s). Discovery data is UNVERIFIED until the identity handshake completes:", hosts.len());
+        for (index, host) in hosts.iter().enumerate() {
+            println!("  {}. {} — {}", index + 1, host.name, host.address);
+            println!("     identity hint: {}… | screen={} input={} clipboard={}",
+                host.device_id.chars().take(16).collect::<String>(),
+                host.capabilities.screen, host.capabilities.input, host.capabilities.clipboard);
+        }
+    }
+    Ok(hosts)
+}
+
+async fn connect(address: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+    let (address, peer_label) = if let Some(address) = address {
+        (address.clone(), address)
+    } else {
+        let hosts = print_discovered_hosts().await?;
+        if hosts.is_empty() {
+            return Err("no hosts discovered; run `estrodesk connect address:port` to connect manually".into());
+        }
+        print!("Choose a host number (or press Enter to cancel): ");
+        let _ = io::stdout().flush();
+        let mut selection = String::new();
+        io::stdin().read_line(&mut selection)?;
+        let selection = selection.trim();
+        if selection.is_empty() { return Ok(()); }
+        let index: usize = selection.parse().map_err(|_| "selection must be a host number")?;
+        let host = hosts.get(index.checked_sub(1).ok_or("selection must be at least 1")?)
+            .ok_or("selection is outside the discovered host list")?;
+        println!("Selected {} at {}. Discovery metadata is untrusted; the normal fingerprint approval still applies.", host.name, host.address);
+        (host.address.to_string(), host.name.clone())
+    };
+
     let identity = load_identity()?;
     let mut trust = load_trust()?;
     println!("Connecting to {address}");
     println!("Controller identity fingerprint: {}", fingerprint(&identity.public_key_bytes()));
     println!("Warning: identity seed is a local file, not OS-keychain encrypted.");
 
-    let mut stream = TcpStream::connect(address).await?;
+    let mut stream = TcpStream::connect(&address).await?;
     let mut handshake = ControllerHandshake::new(identity);
     send(&mut stream, &Envelope::new(handshake.hello("controller", "EstroBunny", capabilities()))).await?;
 
@@ -169,7 +224,7 @@ async fn connect(address: &str) -> Result<(), Box<dyn std::error::Error>> {
     match trust.status(&host_key) {
         Some(TrustStatus::Trusted) => println!("Trusted host recognized: {}", fingerprint(&host_key)),
         Some(TrustStatus::Revoked) => return Err("host is revoked in the local trust store".into()),
-        None if !approve(&ack.device_id, &host_key) => return Err("user did not trust the host device".into()),
+        None if !approve(&peer_label, &host_key) => return Err("user did not trust the host device".into()),
         None => {}
     }
 
@@ -180,7 +235,7 @@ async fn connect(address: &str) -> Result<(), Box<dyn std::error::Error>> {
     let keys = handshake.receive_authentication_ack(ack)?;
 
     if trust.status(&host_key).is_none() {
-        trust.trust(host_key, address)?;
+        trust.trust(host_key, peer_label)?;
         save_trust(&trust)?;
         println!("Host paired and saved to persistent trust store.");
     }
