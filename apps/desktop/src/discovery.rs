@@ -121,8 +121,9 @@ pub async fn discover() -> Result<Vec<DiscoveredHost>, DiscoveryError> {
 
     let mut hosts = BTreeMap::<String, DiscoveredHost>::new();
     let mut buffer = [0u8; MAX_PACKET_SIZE];
+    let deadline = tokio::time::Instant::now() + DISCOVERY_WINDOW;
     loop {
-        let received = tokio::time::timeout(DISCOVERY_WINDOW, socket.recv_from(&mut buffer)).await;
+        let received = tokio::time::timeout_at(deadline, socket.recv_from(&mut buffer)).await;
         let Ok(Ok((length, source))) = received else {
             break;
         };
