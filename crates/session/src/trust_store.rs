@@ -47,7 +47,24 @@ pub fn save(data_dir: &Path, store: &TrustStore) -> Result<(), PersistentTrustEr
     }).collect();
     let payload = StoredTrustStore { version: VERSION, devices };
     let json = serde_json::to_string_pretty(&payload).map_err(|error| PersistentTrustError::Serialization(error.to_string()))?;
-    fs::write(trust_path(data_dir), format!("{json}\n"))?;
+
+    // Never replace the live trust store with a partially-written file. Write the
+    // complete payload beside it, flush it, then atomically rename it into place.
+    let path = trust_path(data_dir);
+    let temp_path = data_dir.join(format!(".{TRUST_FILE}.tmp-{}", std::process::id()));
+    let result = (|| -> Result<(), io::Error> {
+        use std::io::Write;
+        let mut file = fs::File::create(&temp_path)?;
+        file.write_all(format!("{json}\n").as_bytes())?;
+        file.sync_all()?;
+        drop(file);
+        fs::rename(&temp_path, &path)?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temp_path);
+    }
+    result?;
     Ok(())
 }
 
@@ -65,6 +82,8 @@ mod tests {
         save(&dir, &store).unwrap();
         let restored = load(&dir).unwrap();
         assert_eq!(restored.status(&key), Some(TrustStatus::Revoked));
+        let temp = dir.join(format!(".{TRUST_FILE}.tmp-{}", std::process::id()));
+        assert!(!temp.exists());
         let _ = fs::remove_dir_all(&dir);
     }
 }
