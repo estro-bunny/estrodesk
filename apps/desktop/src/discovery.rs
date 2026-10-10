@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use thiserror::Error;
 use tokio::net::UdpSocket;
 
 pub const DISCOVERY_PORT: u16 = 45822;
@@ -19,13 +18,6 @@ pub struct DiscoveredHost {
     pub capabilities: Capabilities,
 }
 
-#[derive(Debug, Error)]
-pub enum DiscoveryError {
-    #[error("discovery I/O error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("discovery serialization error: {0}")]
-    Json(#[from] serde_json::Error),
-}
 
 #[derive(Debug, Serialize, Deserialize)]
 struct DiscoveryRequest {
@@ -59,7 +51,7 @@ pub async fn serve(
     device_name: String,
     tcp_port: u16,
     capabilities: Capabilities,
-) -> Result<(), DiscoveryError> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, DISCOVERY_PORT)).await?;
     let public_key = hex::encode(public_key);
     let response_name: String = device_name.chars().filter(|ch| !ch.is_control()).take(64).collect();
@@ -104,7 +96,7 @@ pub async fn serve(
     }
 }
 
-pub async fn discover() -> Result<Vec<DiscoveredHost>, DiscoveryError> {
+pub async fn discover() -> Result<Vec<DiscoveredHost>, Box<dyn std::error::Error + Send + Sync>> {
     let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await?;
     socket.set_broadcast(true)?;
 
