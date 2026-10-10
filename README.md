@@ -39,6 +39,14 @@ estrodesk/
 - No telemetry by default.
 - Features should earn their complexity.
 
+## LAN discovery
+
+Run `estrodesk host [port]` on the machine you want to share, then run `estrodesk connect` on the controller. The controller broadcasts a short discovery request over IPv4 UDP port 45822, lists responding hosts, and lets you choose one. The host accepts the actual authenticated session over TCP (default port 45821).
+
+Discovery packets contain only public metadata and are not authenticated. Names, addresses, capabilities, and advertised public keys can be spoofed; discovery never grants trust or bypasses the existing cryptographic handshake and visible fingerprint approval. Firewalls may need to allow UDP 45822 and the selected TCP host port on the local network.
+
+For troubleshooting, `estrodesk discover` lists hosts without connecting, and `estrodesk connect address:port` still supports a manual address.
+
 ## Initial MVP
 
 1. Establish authenticated peer identity.
