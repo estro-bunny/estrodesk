@@ -1,3 +1,6 @@
+mod screen_frame;
+pub use screen_frame::{ScreenFramePacket, ScreenPacketError, MAX_SCREEN_PACKET_BYTES};
+
 use estrodesk_crypto::{CryptoError, SessionCipher};
 use estrodesk_protocol::Envelope;
 use serde_json;
