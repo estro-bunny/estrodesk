@@ -187,8 +187,8 @@ async fn print_discovered_hosts() -> Result<Vec<discovery::DiscoveredHost>, Box<
 }
 
 async fn connect(address: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
-    let (address, peer_label) = if let Some(address) = address {
-        (address.clone(), address)
+    let (address, peer_label, expected_host_key) = if let Some(address) = address {
+        (address.clone(), address, None)
     } else {
         let hosts = print_discovered_hosts().await?;
         if hosts.is_empty() {
@@ -204,7 +204,7 @@ async fn connect(address: Option<String>) -> Result<(), Box<dyn std::error::Erro
         let host = hosts.get(index.checked_sub(1).ok_or("selection must be at least 1")?)
             .ok_or("selection is outside the discovered host list")?;
         println!("Selected {} at {}. Discovery metadata is untrusted; the normal fingerprint approval still applies.", host.name, host.address);
-        (host.address.to_string(), host.name.clone())
+        (host.address.to_string(), host.name.clone(), Some(host.public_key.clone()))
     };
 
     let identity = load_identity()?;
@@ -220,6 +220,11 @@ async fn connect(address: Option<String>) -> Result<(), Box<dyn std::error::Erro
     let response = receive(&mut stream).await?;
     let Message::HelloAck(ack) = response.message else { return Err("expected HelloAck".into()); };
     let host_key: [u8; 32] = hex::decode(&ack.public_key)?.try_into().map_err(|_| "host public key must be 32 bytes")?;
+    if let Some(expected) = expected_host_key {
+        if hex::encode(host_key) != expected {
+            return Err("discovered host key does not match the handshake key; discovery may have been spoofed".into());
+        }
+    }
 
     match trust.status(&host_key) {
         Some(TrustStatus::Trusted) => println!("Trusted host recognized: {}", fingerprint(&host_key)),
