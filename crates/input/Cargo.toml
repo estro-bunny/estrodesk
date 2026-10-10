@@ -1,0 +1,8 @@
+[package]
+name = "estrodesk-input"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Remote input primitives for EstroDesk"
+
+[dependencies]

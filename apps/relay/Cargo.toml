@@ -1,0 +1,8 @@
+[package]
+name = "estrodesk-relay"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Future relay service for EstroDesk"
+
+[dependencies]
