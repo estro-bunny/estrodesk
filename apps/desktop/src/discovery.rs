@@ -14,6 +14,7 @@ pub struct DiscoveredHost {
     pub name: String,
     pub address: SocketAddr,
     pub device_id: String,
+    pub public_key: String,
     pub capabilities: Capabilities,
 }
 
@@ -145,6 +146,7 @@ pub async fn discover() -> Result<Vec<DiscoveredHost>, Box<dyn std::error::Error
             name,
             address,
             device_id: response.device_id,
+            public_key: response.public_key,
             capabilities: response.capabilities,
         });
     }
